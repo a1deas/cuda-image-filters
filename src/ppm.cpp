@@ -33,7 +33,7 @@ bool filters::readPPM(const std::string& path, ImageU8& img){
   skipWScomments(f);
   if(std::fscanf(f, "%d", &maxv)!=1 || maxv!=255){ std::fclose(f); return false; }
 
-  fgetc(f); // один пробельный символ после maxv
+  fgetc(f);
 
   img.w=w; img.h=h; img.c=3;
   img.data.resize((size_t)w*h*3);
