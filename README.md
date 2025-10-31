@@ -1,15 +1,32 @@
 # CUDA Image Filters
-Filters pack built with **CUDA**.
+GPU-accelerated image filters in modern **CUDA** with clean CPU fallback, tidy CLI and benchmark harness.
 
-This project demonstrates image filters, such as: `sharpen`, `gaussian blur`, `sobel edge`, `box blur`.
+This project demonstrates image filters, such as: `sharpen`, `gaussian blur`, `sobel edge`, `box blur`, `grayscale` and many others.
+
+# Devices
+- CPU 
+- GPU(CUDA of course)
+
+## Features
+- Filters:
+    - Grayscale
+    - Boxblur
+- PPM support
+
+## PPM Dummy
+
+![screenshot](demo/dummy.png)
+
+## Grayscale Filtered Dummy 
+
+![screenshot](demo/dummyGrayscale.png)
+
+## Boxblur Filtered Dummy
+
+![screenshot](demo/dummyBoxblur.png)
 
 ## Next Steps
-- FFmpeg stdin/stdout
-- Video upscaling
-- NVDEC/NVENC
-- Texture Objects / CUDA surface reads
-- Bench Tables(720p/1080p/1440p, 2x/4x, ms/frame and MPix/s)
-- Autotest Package, PSNR/SSIM report
+- Add other filters
 
 ## Tech: 
 C++20, CUDA 13.0, CMake
