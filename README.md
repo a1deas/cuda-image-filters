@@ -25,6 +25,8 @@ This project demonstrates image filters, such as: `sharpen`, `gaussian blur`, `s
 
 ![screenshot](demo/dummyBoxblur.png)
 
+> Gray for now
+
 ## Next Steps
 - Add other filters
 
