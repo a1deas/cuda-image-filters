@@ -1,7 +1,7 @@
 #include <vector>
 #include "ppm.hpp"
 
-// global forward
+// forward declaration 
 #ifndef CIF_FWD_CUDA_STREAM_T
 struct CUstream_st;
 using cudaStream_t = CUstream_st*;  // global
@@ -11,7 +11,13 @@ using cudaStream_t = CUstream_st*;  // global
 namespace filters {
 
 enum class Device { CPU, CUDA };
-enum class Filter { Grayscale, Boxblur, Sharpen, GaussianBlur, SobelEdge };
+enum class Filter { 
+    Grayscale, 
+    Boxblur, 
+    Sharpen, 
+    GaussianBlur, 
+    SobelEdge   
+};
 
 bool apply(
     Filter filter, 
@@ -25,4 +31,7 @@ bool apply(
 void grayscaleCPU(const ImageU8& in, ImageU8& out);
 void boxblurCPU(const ImageU8& in, ImageU8& out);
 
+// CUDA References
+bool grayscaleCUDA(const ImageU8& in, ImageU8& out, int tile, cudaStream_t stream);
+bool boxblurCUDA(const ImageU8& in, ImageU8& out, int tile, cudaStream_t stream);
 } // namespace filters

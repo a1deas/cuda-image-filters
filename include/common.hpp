@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <chrono>
 
+// Macro to check for CUDA errors
 #define CUDA_OK(stmt) do {                                  \
     cudaError_t err = (stmt);                               \
     if (err != cudaSuccess) {                               \
@@ -12,14 +13,17 @@
     }                                                       \
 } while(0)                                                  
 
+// Kernel recording struct
 struct GPUTimer {
     cudaEvent_t a{}, b{};
     float ms{};
     GPUTimer() { CUDA_OK(cudaEventCreate(&a)); CUDA_OK(cudaEventCreate(&b)); }
     ~GPUTimer() { cudaEventDestroy(a); cudaEventDestroy(b); }
 
+    // start recording
     void start(cudaStream_t stream = nullptr) { 
         CUDA_OK(cudaEventRecord(a, stream)); }
+    // stop recording and syncrinize
     float stop(cudaStream_t stream = nullptr) { 
         CUDA_OK(cudaEventRecord(b, stream)); 
         CUDA_OK(cudaEventSynchronize(b)); 

@@ -3,6 +3,8 @@
 
 using namespace filters;
 
+// Filters
+// Grayscale filter
 void filters::grayscaleCPU(const ImageU8& in, ImageU8& out) {
     out = { in.w, in.h, 1, {} };
     out.data.resize(in.w * in.h);
@@ -17,6 +19,7 @@ void filters::grayscaleCPU(const ImageU8& in, ImageU8& out) {
     }
 }
 
+// Box Blur Filter
 void filters::boxblurCPU(const ImageU8& in, ImageU8& out) {
     ImageU8 gray;
     if (in.c == 3) 
@@ -45,6 +48,7 @@ void filters::boxblurCPU(const ImageU8& in, ImageU8& out) {
     }
 }
 
+// Apply certain filter
 bool filters::apply(Filter filter, Device device,
                     const ImageU8& in, ImageU8& out,
                     int tile, cudaStream_t stream) { 
@@ -59,6 +63,7 @@ bool filters::apply(Filter filter, Device device,
         }
     }
 
+    // CUDA
     extern bool grayscaleCUDA(const ImageU8&, ImageU8&, int, cudaStream_t);
     extern bool boxblurCUDA(const ImageU8&, ImageU8&, int, cudaStream_t);
 
