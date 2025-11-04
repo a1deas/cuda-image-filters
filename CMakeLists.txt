@@ -34,6 +34,7 @@ include_directories(
 
 # --- Target ---
 add_executable(image_filters ${SRC})
+target_include_directories(image_filters PRIVATE ${CMAKE_SOURCE_DIR}/third_party/stb)
 
 # --- CUDA properties ---
 set_target_properties(image_filters PROPERTIES

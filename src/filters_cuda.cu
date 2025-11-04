@@ -20,7 +20,7 @@ __global__ void kGrayscale(const unsigned char* __restrict__ in,
 template<int TILE>
 __global__ void kBox3Gray(const unsigned char* __restrict__ in,
                           unsigned char* out, int W, int H) {
-    constexpr int R = 1;
+    constexpr int R = 1;0
     __shared__ unsigned char tile[TILE + 2*R][TILE + 2*R];
 
     int gx = blockIdx.x * TILE + threadIdx.x;
