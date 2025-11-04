@@ -73,6 +73,108 @@ __global__ void kBox3Gray(const unsigned char* __restrict__ in,
     out[idx] = static_cast<unsigned char>((sum + 4) / 9);
 }
 
+__constant__ float c_gauss[5] = { 1.f/16, 4.f/16, 6.f/16, 4.f/16, 1.f/16 };
+
+// Gauss 5x5 
+template<int TILE>
+__global__ void kGauss_H(const unsigned char* __restrict__ in, 
+                            unsigned char* out, int W, int H) {
+    constexpr int R = 2;
+    __shared__ unsigned char tile[TILE][TILE + 2 * R];
+    int gx = blockIdx.x * TILE + threadIdx.x;
+    int gy = blockIdx.y * TILE + threadIdx.y;
+
+    for (int dx = -R; dx <= R; ++dx) {
+        int x = min(max(gx + dx, 0), W - 1);
+        if (gx < W && gy < H)
+            tile[threadIdx.y][threadIdx.x + dx + R] = in[gy * W + x];
+    }
+    __syncthreads();
+
+    if (gx >= W || gy >= H) return;
+
+    float s = 0.f;
+    #pragma unroll
+    for (int k=-R;k<=R;++k){
+        s += c_gauss5[k + R] * tile[threadIdx.y][threadIdx.x + k + R];
+    }
+    tmp[gy * W + gx] = (unsigned char)(s + 0.5f);
+}
+
+template<int TILE>
+__global__ void kGauss_V(const unsigned char* __restrict__ tmp,
+                          unsigned char* out, int W, int H){
+    constexpr int R=2;
+    __shared__ unsigned char tile[TILE+2*R][TILE];
+    int gx = blockIdx.x * TILE + threadIdx.x;
+    int gy = blockIdx.y * TILE + threadIdx.y;
+
+    for (int dy=-R; dy<=R; ++dy){
+        int y = min(max(gy+dy,0), H-1);
+        if (gx<W && gy<H)
+            tile[threadIdx.y+dy+R][threadIdx.x] = tmp[y*W + gx];
+    }
+    __syncthreads();
+    if (gx>=W || gy>=H) return;
+
+    float s=0.f;
+    #pragma unroll
+    for (int k =- R;k <= R; ++k){
+        s += c_gauss5[k + R] * tile[threadIdx.y + k + R][threadIdx.x];
+    }
+    out[gy * W + gx] = (unsigned char)(s + 0.5f);
+}
+
+// Sobel
+template<int TILE>
+__global__ void kSobelGray(const unsigned char* __restrict__ in,
+                           unsigned char* out, int W, int H){
+    constexpr int R=1;
+    __shared__ unsigned char tile[TILE+2*R][TILE+2*R];
+
+    int gx = blockIdx.x * TILE + threadIdx.x;
+    int gy = blockIdx.y * TILE + threadIdx.y;
+    int lx = threadIdx.x + R;
+    int ly = threadIdx.y + R;
+
+    int x = min(max(gx,0), W-1);
+    int y = min(max(gy,0), H-1);
+    tile[ly][lx] = in[y*W + x];
+
+    if (threadIdx.x<R){
+        int xL=max(gx-R,0), xR=min(gx+TILE,W-1);
+        tile[ly][lx-R]     = in[y*W + xL];
+        tile[ly][lx+TILE]  = in[y*W + xR];
+    }
+    if (threadIdx.y<R){
+        int yT=max(gy-R,0), yB=min(gy+TILE,H-1);
+        tile[ly-R][lx]     = in[yT*W + x];
+        tile[ly+TILE][lx]  = in[yB*W + x];
+    }
+    if (threadIdx.x<R && threadIdx.y<R){
+        int xL=max(gx-R,0), xR=min(gx+TILE,W-1);
+        int yT=max(gy-R,0), yB=min(gy+TILE,H-1);
+        tile[ly-R][lx-R]        = in[yT*W + xL];
+        tile[ly-R][lx+TILE]     = in[yT*W + xR];
+        tile[ly+TILE][lx-R]     = in[yB*W + xL];
+        tile[ly+TILE][lx+TILE]  = in[yB*W + xR];
+    }
+
+    __syncthreads();
+    if (gx>=W||gy>=H) return;
+
+    int p00=tile[ly-1][lx-1], p01=tile[ly-1][lx], p02=tile[ly-1][lx+1];
+    int p10=tile[ly][lx-1], p12=tile[ly][lx+1];
+    int p20=tile[ly+1][lx-1], p21=tile[ly+1][lx], p22=tile[ly+1][lx+1];
+
+    int gxv = (p02 + 2*p12 + p22) - (p00 + 2*p10 + p20);
+    int gyv = (p00 + 2*p01 + p02) - (p20 + 2*p21 + p22);
+    int mag = abs(gxv) + abs(gyv);
+    if (mag>255) mag=255;
+    out[y*W + x] = (unsigned char)mag;
+}
+
+// 
 namespace filters {
 
 // CUDA Grayscale 
@@ -92,10 +194,10 @@ bool grayscaleCUDA(const ImageU8& in, ImageU8& out, int tile, cudaStream_t strea
     CUDA_OK(cudaMemcpyAsync(dIn, in.data.data(), bytesIn, cudaMemcpyHostToDevice, stream));
 
     int T = (tile <= 0 ? 16 : tile);
-    dim3 blk(T, T), grd((in.w + T - 1) / T, (in.h + T - 1) / T);
+    dim3  block(T, T), grid((in.w + T - 1) / T, (in.h + T - 1) / T);
 
     GPUTimer t; t.start(stream);
-    kGrayscale<<<grd, blk, 0, stream>>>(dIn, dOut, in.w, in.h);
+    kGrayscale<<<grid,  block, 0, stream>>>(dIn, dOut, in.w, in.h);
     CUDA_OK(cudaGetLastError());
     (void)t.stop(stream);
 
@@ -127,11 +229,11 @@ bool boxblurCUDA(const ImageU8& in, ImageU8& out, int tile, cudaStream_t stream)
     CUDA_OK(cudaMemcpyAsync(dIn, gray.data.data(), bytes, cudaMemcpyHostToDevice, stream));
 
     int T = (tile <= 0 ? 16 : tile);
-    dim3 blk(T, T), grd((in.w + T - 1) / T, (in.h + T - 1) / T);
+    dim3  block(T, T), grid((in.w + T - 1) / T, (in.h + T - 1) / T);
 
     GPUTimer timer; timer.start(stream);
-    if      (T == 16) kBox3Gray<16><<<grd, blk, 0, stream>>>(dIn, dOut, in.w, in.h);
-    else if (T == 32) kBox3Gray<32><<<grd, blk, 0, stream>>>(dIn, dOut, in.w, in.h);
+    if      (T == 16) kBox3Gray<16><<<grid,  block, 0, stream>>>(dIn, dOut, in.w, in.h);
+    else if (T == 32) kBox3Gray<32><<<grid,  block, 0, stream>>>(dIn, dOut, in.w, in.h);
     else              kBox3Gray<16><<<dim3((in.w+15)/16,(in.h+15)/16), dim3(16,16), 0, stream>>>(dIn, dOut, in.w, in.h);
     CUDA_OK(cudaGetLastError());
     (void)timer.stop(stream);
@@ -143,5 +245,103 @@ bool boxblurCUDA(const ImageU8& in, ImageU8& out, int tile, cudaStream_t stream)
     cudaFree(dOut);
     return true;
 }
+
+bool gaussCUDA(const ImageU8& in, ImageU8& out, int tile, cudaStream_t stream) {
+    ImageU8 gray;
+    if (in.c == 3) { if(!grayscaleCUDA(in, gray, tile, stream)) return false; }
+    else gray = in;
+
+    out = {in.w, in.h, 1, {} };
+    out.data.resize((size_t)in.w * in.h);
+
+    const size_t N = (size_t)in.w * in.h;
+    unsigned char* dIn = nullptr;
+    unsigned char* dTemp = nullptr;
+    unsigned char* dOut = nullptr;
+
+    CUDA_OK(cudaMalloc(&dIn, N));
+    CUDA_OK(cudaMalloc(&dTemp, N));    
+    CUDA_OK(cudaMalloc(&dOut, N));
+    CUDA_OK(cudaMemcpyAsync(dIn, gray.data.data(), N, cudaMemcpyHostToDevice, stream));
+
+    int T = (tile <= 0 ? 16 : tile);
+    dim3 block(T, T);
+    dim3 grid((in.w + T - 1) / T, 
+              (in.h + T - 1) / T);
+
+    if (T==16) 
+        kGauss_H<16><<<grid, block, 0, stream>>>(dIn, dTemp, in.w, in.h);
+    else if (T==32) 
+        kGauss_H<32><<<grid, block,0,stream>>>(dIn, dTemp, in.w, in.h);
+    else
+        kGauss_H<16><<<dim3((in.w+15)/16,(in.h+15)/16), dim3(16,16),0,stream>>>(dIn,dTemp,in.w,in.h); 
+    CUDA_OK(cudaGetLastError());
+
+    if (T==16) 
+        kGauss_V<16><<<grid, block,0,stream>>>(dTemp,dOut,in.w,in.h);
+    else if (T==32) 
+        kGauss_V<32><<<grid, block,0,stream>>>(dTemp,dOut,in.w,in.h);
+    else 
+        kGauss_V<16><<<dim3((in.w+15)/16,(in.h+15)/16), dim3(16,16),0,stream>>>(dTemp,dOut,in.w,in.h);
+    CUDA_OK(cudaGetLastError());
+
+    CUDA_OK(cudaMemcpyAsync(out.data.data(), dOut, N, cudaMemcpyDeviceToHost, stream));
+    CUDA_OK(cudaStreamSynchronize(stream));
+    cudaFree(dIn); 
+    cudaFree(dTemp); 
+    cudaFree(dOut);
+    return true;
+}
+
+bool sobelCUDA(const ImageU8& in, ImageU8& out, int tile, cudaStream_t stream){
+    ImageU8 gray;
+    if (in.c==3){ if(!grayscaleCUDA(in, gray, tile, stream)) return false; }
+    else gray=in;
+
+    out = { in.w, in.h, 1, {} };
+    out.data.resize((size_t)in.w*in.h);
+
+    const size_t N=(size_t)in.w*in.h;
+    unsigned char *dIn=nullptr,*dOut=nullptr;
+    CUDA_OK(cudaMalloc(&dIn,N));
+    CUDA_OK(cudaMalloc(&dOut,N));
+    CUDA_OK(cudaMemcpyAsync(dIn, gray.data.data(), N, cudaMemcpyHostToDevice, stream));
+
+    int T=(tile<=0?16:tile);
+    dim3 blk(T,T), grd((in.w+T-1)/T,(in.h+T-1)/T);
+    if (T==16) 
+        kSobelGray<16><<<grd,blk,0,stream>>>(dIn,dOut,in.w,in.h);
+    else if (T==32) 
+        kSobelGray<32><<<grd,blk,0,stream>>>(dIn,dOut,in.w,in.h);
+    else 
+        kSobelGray<16><<<dim3((in.w+15)/16,(in.h+15)/16), dim3(16,16),0,stream>>>(dIn,dOut,in.w,in.h);
+    CUDA_OK(cudaGetLastError());
+
+    CUDA_OK(cudaMemcpyAsync(out.data.data(), dOut, N, cudaMemcpyDeviceToHost, stream));
+    CUDA_OK(cudaStreamSynchronize(stream));
+    cudaFree(dIn); cudaFree(dOut);
+    return true;
+}
+
+bool unsharpCUDA(const ImageU8& in, ImageU8& out, float amount, int tile, cudaStream_t stream){
+    ImageU8 gray;
+    if (in.c==3){ if(!grayscaleCUDA(in, gray, tile, stream)) return false; }
+    else gray=in;
+
+    ImageU8 blur;
+    if (!gaussCUDA(gray, blur, tile, stream)) return false;
+
+    out = { in.w, in.h, 1, {} };
+    out.data.resize((size_t)in.w*in.h);
+    for (int i=0;i<in.w*in.h;++i){
+        int base = (int)gray.data[i];
+        int det  = base - (int)blur.data[i];
+        int val  = base + (int)(amount * det + 0.5f);
+        if (val<0) val=0; if (val>255) val=255;
+        out.data[i] = (unsigned char)val;
+    }
+    return true;
+}
+
 
 } // namespace filters
