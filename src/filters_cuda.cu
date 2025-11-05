@@ -20,7 +20,7 @@ __global__ void kGrayscale(const unsigned char* __restrict__ in,
 template<int TILE>
 __global__ void kBox3Gray(const unsigned char* __restrict__ in,
                           unsigned char* out, int W, int H) {
-    constexpr int R = 1;0
+    constexpr int R = 10;
     __shared__ unsigned char tile[TILE + 2*R][TILE + 2*R];
 
     int gx = blockIdx.x * TILE + threadIdx.x;
@@ -78,7 +78,7 @@ __constant__ float c_gauss[5] = { 1.f/16, 4.f/16, 6.f/16, 4.f/16, 1.f/16 };
 // Gauss 5x5 
 template<int TILE>
 __global__ void kGauss_H(const unsigned char* __restrict__ in, 
-                            unsigned char* out, int W, int H) {
+                            unsigned char* tmp, int W, int H) {
     constexpr int R = 2;
     __shared__ unsigned char tile[TILE][TILE + 2 * R];
     int gx = blockIdx.x * TILE + threadIdx.x;
@@ -96,7 +96,7 @@ __global__ void kGauss_H(const unsigned char* __restrict__ in,
     float s = 0.f;
     #pragma unroll
     for (int k=-R;k<=R;++k){
-        s += c_gauss5[k + R] * tile[threadIdx.y][threadIdx.x + k + R];
+        s += c_gauss[k + R] * tile[threadIdx.y][threadIdx.x + k + R];
     }
     tmp[gy * W + gx] = (unsigned char)(s + 0.5f);
 }
@@ -120,7 +120,7 @@ __global__ void kGauss_V(const unsigned char* __restrict__ tmp,
     float s=0.f;
     #pragma unroll
     for (int k =- R;k <= R; ++k){
-        s += c_gauss5[k + R] * tile[threadIdx.y + k + R][threadIdx.x];
+        s += c_gauss[k + R] * tile[threadIdx.y + k + R][threadIdx.x];
     }
     out[gy * W + gx] = (unsigned char)(s + 0.5f);
 }

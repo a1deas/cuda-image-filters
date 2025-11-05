@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
     Filter filter;
     if      (f=="grayscale") filter = Filter::Grayscale;
     else if (f=="boxblur")   filter = Filter::Boxblur;
-    else if (f=="gauss5")    filter = Filter::GaussianBlur;
+    else if (f=="gauss")    filter = Filter::GaussianBlur;
     else if (f=="sobel")     filter = Filter::SobelEdge;
     else if (f=="unsharp")   filter = Filter::Unsharp;
     else { std::cerr<<"Unknown filter "<< f << "\n"; return 2; }
@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
     ImageU8 outImg;
     for (int k=0;k<iters;++k){
         if (filter == Filter::Unsharp && device == Device::CUDA){
-            if (!unsharpCUDA(img, outImg, amount, 0)){ std::cerr << "apply failed\n"; return 4; }
+            if (!unsharpCUDA(img, outImg, amount, tile, 0)){ std::cerr << "apply failed\n"; return 4; }
         } else {
             if (!apply(filter, device, img, outImg, tile, nullptr)){ std::cerr<<"apply failed\n"; return 4; }
         }
